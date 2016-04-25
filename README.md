@@ -13,7 +13,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 @RunWith(ConcurrentDependsOnRunner.class)
-@Concurrency(maximumPoolSize = 10)
+@Concurrency(maximumPoolSize = 10) // remove this line if concurrency not needed
 public class Test {
 
     @BeforeClass
