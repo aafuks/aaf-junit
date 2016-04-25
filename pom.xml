@@ -1,0 +1,65 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>net.aaf</groupId>
+	<artifactId>aaf-junit</artifactId>
+	<version>1.0.0</version>
+
+	<description></description>
+	<inceptionYear>2016</inceptionYear>
+	<licenses>
+		<license>
+			<name>The MIT License (MIT)</name>
+			<url>https://opensource.org/licenses/MIT</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+	<scm>
+		<url>https://github.com/aafuks/aaf-junit.git</url>
+		<developerConnection>scm:git:git@github.com:aafuks/aaf-junit.git</developerConnection>
+		<connection>scm:git:git@github.com:aafuks/aaf-junit.git</connection>
+	</scm>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+	</properties>
+
+	<developers>
+		<developer>
+			<id>aafuks</id>
+			<name>Amihai Fuks</name>
+			<email>aafuks@gmail.com</email>
+			<roles>
+				<role>developer</role>
+			</roles>
+			<timezone>+2</timezone>
+			<properties>
+			</properties>
+		</developer>
+	</developers>
+
+	<dependencies>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.12</version>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>3.3</version>
+					<configuration>
+						<source>1.8</source>
+						<target>1.8</target>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+	</build>
+
+</project>
