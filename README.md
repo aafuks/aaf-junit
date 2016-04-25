@@ -3,7 +3,7 @@ aaf-junit
 
 aaf-junit is an extention to the junit f/w that enables test dependency within a single test class.
 
-Hello example
+Simple test example
 ```java
 import org.junit.After;
 import org.junit.AfterClass;
