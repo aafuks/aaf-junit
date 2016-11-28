@@ -183,15 +183,8 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         return () -> {
             while (true) {
                 synchronized (waiting) {
-                    while (waiting.isEmpty()) {
-                        if (finished.containsAll(shouldRun)) {
-                            return;
-                        }
-                        try {
-                            waiting.wait();
-                        } catch (InterruptedException e) {
-                            return;
-                        }
+                    if (waiting.isEmpty() && finished.containsAll(shouldRun)) {
+                        return;
                     }
                     for (Iterator<FrameworkMethod> iter = waiting.iterator(); iter.hasNext();) {
                         FrameworkMethod method = iter.next();
@@ -201,6 +194,11 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
                                 ConcurrentDependsOnRunner.this.runChild(method, notifier);
                             });
                         }
+                    }
+                    try {
+                        waiting.wait();
+                    } catch (InterruptedException e) {
+                        return;
                     }
                 }
             }
@@ -236,7 +234,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
             public void testFinished(Description description) throws Exception {
                 notifyBackgroudThread(description);
             }
-            
+
             private void notifyBackgroudThread(Description description) {
                 synchronized (waiting) {
                     finished.add(description.getMethodName());

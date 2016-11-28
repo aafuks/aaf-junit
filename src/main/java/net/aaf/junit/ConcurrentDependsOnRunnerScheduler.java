@@ -16,9 +16,7 @@ package net.aaf.junit;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.runners.model.RunnerScheduler;
@@ -36,8 +34,7 @@ class ConcurrentDependsOnRunnerScheduler implements RunnerScheduler {
     private final CompletionService<Void> completionService;
 
     ConcurrentDependsOnRunnerScheduler(int maximumPoolSize) {
-        executorService = new ThreadPoolExecutor(0, maximumPoolSize, 1L, TimeUnit.MINUTES, new SynchronousQueue<Runnable>(),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+        executorService = Executors.newFixedThreadPool(maximumPoolSize);
         completionService = new ExecutorCompletionService<>(executorService);
     }
 
