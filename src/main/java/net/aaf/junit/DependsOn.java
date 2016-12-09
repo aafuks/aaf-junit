@@ -23,10 +23,12 @@ import java.lang.annotation.Target;
  * @version Apr 24, 2016
  * @since 1.0.0
  */
-@Target(ElementType.METHOD)
+@Target({ ElementType.TYPE, ElementType.METHOD })
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DependsOn {
 
     String[] tests() default {};
+
+    String[] classes() default {};
 
 }

@@ -19,6 +19,11 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.junit.runner.Description;
@@ -30,6 +35,7 @@ import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
+import org.junit.runners.model.RunnerScheduler;
 
 /**
  * @author Amihai Fuks
@@ -216,17 +222,23 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         return new RunListener() {
             @Override
             public void testFailure(Failure failure) throws Exception {
-                failed.add(failure.getDescription().getMethodName());
+                synchronized (failed) {
+                    failed.add(failure.getDescription().getMethodName());
+                }
             }
 
             @Override
             public void testAssumptionFailure(Failure failure) {
-                failed.add(failure.getDescription().getMethodName());
+                synchronized (failed) {
+                    failed.add(failure.getDescription().getMethodName());
+                }
             }
 
             @Override
             public void testIgnored(Description description) throws Exception {
-                failed.add(description.getMethodName());
+                synchronized (failed) {
+                    failed.add(description.getMethodName());
+                }
                 notifyBackgroudThread(description);
             }
 
@@ -242,6 +254,40 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
                 }
             }
         };
+    }
+
+    private static class ConcurrentDependsOnRunnerScheduler implements RunnerScheduler {
+
+        private final AtomicInteger tests = new AtomicInteger();
+
+        private final ExecutorService executorService;
+        private final CompletionService<Void> completionService;
+
+        private ConcurrentDependsOnRunnerScheduler(int maximumPoolSize) {
+            executorService = Executors.newFixedThreadPool(maximumPoolSize);
+            completionService = new ExecutorCompletionService<>(executorService);
+        }
+
+        @Override
+        public void schedule(Runnable childStatement) {
+            tests.incrementAndGet();
+            completionService.submit(childStatement, null);
+        }
+
+        @Override
+        public void finished() {
+            try {
+                while (tests.get() != 0) {
+                    completionService.take();
+                    tests.decrementAndGet();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                executorService.shutdownNow();
+            }
+        }
+
     }
 
 }
