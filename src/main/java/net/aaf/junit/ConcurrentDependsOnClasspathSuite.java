@@ -52,6 +52,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     private final SuiteRunListener listener;
     private volatile RunNotifier notifier;
     private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
+    private final Set<String> started = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> scheduled = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> failed = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> finished = Collections.synchronizedSet(new HashSet<>());
@@ -80,9 +81,8 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         for (Runner runner : getChildren()) {
             nameToRunner.put(getClassName(runner), runner);
             if (runner instanceof IgnoredClassRunner) {
-                synchronized (failed) {
-                    failed.add(getClassName(runner));
-                }
+                failed.add(getClassName(runner));
+                finished.add(getClassName(runner));
             }
         }
     }
@@ -98,17 +98,25 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         } else if (alreadyInvoked(runner)) {
             return;
         } else if (shouldIgnore(runner)) {
-            notifier.fireTestIgnored(runner.getDescription());
+            runner.getDescription().getChildren().stream().forEach(t -> notifier.fireTestIgnored(t));
+            synchronized (waiting) {
+                failed.add(getClassName(runner));
+                finished.add(getClassName(runner));
+                waiting.notify();
+            }
         } else {
-            super.runChild(scheduler.newClassRunner(getClassName(runner), runner), notifier);
+            if (runner.getClass() != ConcurrentDependsOnSuiteScheduler.ClassRunner.class) {
+                super.runChild(scheduler.newClassRunner(getClassName(runner), runner), notifier);
+            } else {
+                scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> runChild(runner, notifier)));
+            }
         }
     }
 
     private void scheduleDependsOnClasses(Runner runner) {
         for (String dependsOn : getDependsOnClasses(runner)) {
             if (scheduled.add(dependsOn)) {
-                scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner),
-                        () -> ConcurrentDependsOnClasspathSuite.this.runChild(nameToRunner.get(dependsOn), notifier)));
+                scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> runChild(nameToRunner.get(dependsOn), notifier)));
             }
         }
     }
@@ -120,7 +128,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     private boolean shouldWaitAndWait(Runner runner) {
         String[] classes = getDependsOnClasses(runner);
         synchronized (waiting) {
-            boolean wait = Stream.of(classes).anyMatch(m -> !finished.contains(m));
+            boolean wait = Stream.of(classes).anyMatch(c -> !finished.contains(c));
             if (wait) {
                 waiting.add(runner);
             }
@@ -130,9 +138,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
     private boolean shouldIgnore(Runner runner) {
         String[] classes = getDependsOnClasses(runner);
-        synchronized (failed) {
-            return Stream.of(classes).anyMatch(c -> failed.contains(c));
-        }
+        return Stream.of(classes).anyMatch(c -> failed.contains(c));
     }
 
     private static String[] getDependsOnClasses(Runner runner) {
@@ -211,7 +217,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
                         if (!shouldWait(runner)) {
                             iter.remove();
                             scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> {
-                                ConcurrentDependsOnClasspathSuite.this.runChild(runner, notifier);
+                                runChild(runner, notifier);
                             }));
                         }
                     }
@@ -227,31 +233,32 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
     private boolean shouldWait(Runner runner) {
         String[] classes = getDependsOnClasses(runner);
-        synchronized (waiting) {
-            return Stream.of(classes).anyMatch(m -> !finished.contains(m));
-        }
+        return Stream.of(classes).anyMatch(m -> !finished.contains(m));
     }
 
     private class SuiteRunListener extends RunListener {
 
         @Override
         public void testFailure(Failure failure) throws Exception {
-            synchronized (failed) {
-                failed.add(failure.getDescription().getTestClass().getName());
-            }
+            failed.add(failure.getDescription().getTestClass().getName());
         }
 
         @Override
         public void testAssumptionFailure(Failure failure) {
-            synchronized (failed) {
-                failed.add(failure.getDescription().getTestClass().getName());
-            }
+            failed.add(failure.getDescription().getTestClass().getName());
+        }
+
+        @Override
+        public void testStarted(Description description) throws Exception {
+            started.add(description.getTestClass().getName());
         }
 
         void classFinished(String className) {
             synchronized (waiting) {
-                finished.add(className);
-                waiting.notifyAll();
+                if (started.contains(className)) {
+                    finished.add(className);
+                    waiting.notify();
+                }
             }
         }
 

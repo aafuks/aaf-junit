@@ -94,7 +94,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     private void scheduleDependsOnTests(FrameworkMethod method) {
         for (String dependsOn : getDependsOnTests(method)) {
             if (scheduled.add(dependsOn)) {
-                scheduler.schedule(() -> ConcurrentDependsOnRunner.this.runChild(nameToMethod.get(dependsOn), notifier));
+                scheduler.schedule(() -> runChild(nameToMethod.get(dependsOn), notifier));
             }
         }
     }
@@ -116,9 +116,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private boolean shouldIgnore(FrameworkMethod method) {
         String[] tests = getDependsOnTests(method);
-        synchronized (failed) {
-            return Stream.of(tests).anyMatch(m -> failed.contains(m));
-        }
+        return Stream.of(tests).anyMatch(m -> failed.contains(m));
     }
 
     private static String[] getDependsOnTests(FrameworkMethod method) {
@@ -196,9 +194,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
                         FrameworkMethod method = iter.next();
                         if (!shouldWait(method)) {
                             iter.remove();
-                            scheduler.schedule(() -> {
-                                ConcurrentDependsOnRunner.this.runChild(method, notifier);
-                            });
+                            scheduler.schedule(() -> runChild(method, notifier));
                         }
                     }
                     try {
@@ -213,32 +209,24 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private boolean shouldWait(FrameworkMethod method) {
         String[] tests = getDependsOnTests(method);
-        synchronized (waiting) {
-            return Stream.of(tests).anyMatch(m -> !finished.contains(m));
-        }
+        return Stream.of(tests).anyMatch(m -> !finished.contains(m));
     }
 
     private RunListener newRunListener() {
         return new RunListener() {
             @Override
             public void testFailure(Failure failure) throws Exception {
-                synchronized (failed) {
-                    failed.add(failure.getDescription().getMethodName());
-                }
+                failed.add(failure.getDescription().getMethodName());
             }
 
             @Override
             public void testAssumptionFailure(Failure failure) {
-                synchronized (failed) {
-                    failed.add(failure.getDescription().getMethodName());
-                }
+                failed.add(failure.getDescription().getMethodName());
             }
 
             @Override
             public void testIgnored(Description description) throws Exception {
-                synchronized (failed) {
-                    failed.add(description.getMethodName());
-                }
+                failed.add(description.getMethodName());
                 notifyBackgroudThread(description);
             }
 
@@ -250,7 +238,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
             private void notifyBackgroudThread(Description description) {
                 synchronized (waiting) {
                     finished.add(description.getMethodName());
-                    waiting.notifyAll();
+                    waiting.notify();
                 }
             }
         };
