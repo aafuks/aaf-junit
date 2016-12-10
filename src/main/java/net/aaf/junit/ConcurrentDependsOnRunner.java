@@ -13,10 +13,12 @@
  */
 package net.aaf.junit;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionService;
@@ -68,13 +70,21 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private void shouldRun() {
         for (FrameworkMethod method : getChildren()) {
-            shouldRun.add(method.getName());
+            shouldRun.add(getName(method));
         }
+    }
+
+    private String getName(FrameworkMethod method) {
+        return getTestClass().getName() + "#" + method.getName();
+    }
+
+    private static String getName(Description description) {
+        return description.getClassName() + "#" + description.getMethodName();
     }
 
     private void buildFrameworkMethodTree() {
         for (FrameworkMethod method : getChildren()) {
-            nameToMethod.put(method.getName(), method);
+            nameToMethod.put(getName(method), method);
         }
     }
 
@@ -100,7 +110,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     }
 
     private boolean alreadyInvoked(FrameworkMethod method) {
-        return !invoked.add(method.getName());
+        return !invoked.add(getName(method));
     }
 
     private boolean shouldWaitAndWait(FrameworkMethod method) {
@@ -119,12 +129,16 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         return Stream.of(tests).anyMatch(m -> failed.contains(m));
     }
 
-    private static String[] getDependsOnTests(FrameworkMethod method) {
+    private String[] getDependsOnTests(FrameworkMethod method) {
         if (!method.getMethod().isAnnotationPresent(DependsOn.class)) {
             return new String[0];
         }
         DependsOn dependsOn = method.getMethod().getAnnotation(DependsOn.class);
-        return dependsOn.tests();
+        List<String> tests = new ArrayList<>();
+        for (String test : dependsOn.tests()) {
+            tests.add(getTestClass().getName() + "#" + test);
+        }
+        return tests.toArray(new String[0]);
     }
 
     @Override
@@ -157,7 +171,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
             if (inner.shouldRun(description)) {
                 return true;
             } else {
-                shouldNotRun.add(description.getMethodName());
+                shouldNotRun.add(getName(description));
                 return false;
             }
         }
@@ -226,7 +240,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
             @Override
             public void testIgnored(Description description) throws Exception {
-                failed.add(description.getMethodName());
+                failed.add(getName(description));
                 notifyBackgroudThread(description);
             }
 
@@ -237,7 +251,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
             private void notifyBackgroudThread(Description description) {
                 synchronized (waiting) {
-                    finished.add(description.getMethodName());
+                    finished.add(getName(description));
                     waiting.notify();
                 }
             }

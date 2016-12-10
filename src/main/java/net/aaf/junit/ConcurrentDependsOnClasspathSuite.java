@@ -98,10 +98,11 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         } else if (alreadyInvoked(runner)) {
             return;
         } else if (shouldIgnore(runner)) {
+            super.runChild(scheduler.newClassRunner(getClassName(runner), new IgnoredClassRunner(runner.getDescription().getTestClass())), notifier);
             runner.getDescription().getChildren().stream().forEach(t -> notifier.fireTestIgnored(t));
+            failed.add(getClassName(runner));
+            finished.add(getClassName(runner));
             synchronized (waiting) {
-                failed.add(getClassName(runner));
-                finished.add(getClassName(runner));
                 waiting.notify();
             }
         } else {
@@ -216,9 +217,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
                         Runner runner = iter.next();
                         if (!shouldWait(runner)) {
                             iter.remove();
-                            scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> {
-                                runChild(runner, notifier);
-                            }));
+                            scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> runChild(runner, notifier)));
                         }
                     }
                     try {
@@ -240,16 +239,23 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
         @Override
         public void testFailure(Failure failure) throws Exception {
+            started.add(failure.getDescription().getTestClass().getName());
             failed.add(failure.getDescription().getTestClass().getName());
         }
 
         @Override
         public void testAssumptionFailure(Failure failure) {
+            started.add(failure.getDescription().getTestClass().getName());
             failed.add(failure.getDescription().getTestClass().getName());
         }
 
         @Override
-        public void testStarted(Description description) throws Exception {
+        public void testIgnored(Description description) throws Exception {
+            started.add(description.getTestClass().getName());
+        }
+
+        @Override
+        public void testFinished(Description description) throws Exception {
             started.add(description.getTestClass().getName());
         }
 
