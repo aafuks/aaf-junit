@@ -13,6 +13,7 @@
  */
 package net.aaf.junit;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -24,6 +25,7 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.junit.extensions.cpsuite.ClasspathSuite;
@@ -147,7 +149,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             return new String[0];
         }
         DependsOn dependsOn = runner.getDescription().getTestClass().getAnnotation(DependsOn.class);
-        return dependsOn.classes();
+        return Arrays.stream(dependsOn.classes()).map(c -> c.getName()).collect(Collectors.toList()).toArray(new String[0]);
     }
 
     @Override
