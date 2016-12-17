@@ -21,16 +21,14 @@ import java.lang.annotation.Target;
 
 /**
  * @author Amihai Fuks
- * @version Apr 24, 2016
+ * @version Dec 17, 2016
  * @since 1.0.0
  */
-@Target({ ElementType.TYPE, ElementType.METHOD })
+@Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Inherited
-public @interface DependsOn {
+public @interface DependsOnClasses {
 
-    String[] tests() default {};
-
-    Class<?>[] classes() default {};
+    Class<?>[] value() default {};
 
 }

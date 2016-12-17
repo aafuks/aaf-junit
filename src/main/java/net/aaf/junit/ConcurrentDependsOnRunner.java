@@ -13,12 +13,10 @@
  */
 package net.aaf.junit;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionService;
@@ -26,7 +24,8 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.junit.runner.Description;
 import org.junit.runner.manipulation.Filter;
@@ -46,51 +45,49 @@ import org.junit.runners.model.RunnerScheduler;
  */
 public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
-    private static final int CORE_POOL_SIZE = 2;
+    private volatile RunNotifier notifier;
 
     private final ConcurrentDependsOnRunnerScheduler scheduler;
-    private volatile RunNotifier notifier;
+    private final DependencyTree tree = new DependencyTree();
     private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
-    private final Set<String> scheduled = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> failed = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> finished = Collections.synchronizedSet(new HashSet<>());
-    private final Set<FrameworkMethod> waiting = Collections.synchronizedSet(new HashSet<>());
     private final Map<String, FrameworkMethod> nameToMethod = new HashMap<>();
     private final Set<String> shouldRun = Collections.synchronizedSet(new HashSet<>());
 
     public ConcurrentDependsOnRunner(Class<?> klass) throws InitializationError {
         super(klass);
-        int maximumPoolSize = klass.isAnnotationPresent(Concurrency.class) ? klass.getAnnotation(Concurrency.class).maximumPoolSize() : 0;
-        // +1 for controller thread (background scheduler)
-        scheduler = new ConcurrentDependsOnRunnerScheduler(Math.max(CORE_POOL_SIZE, maximumPoolSize + 1));
-        setScheduler(scheduler);
-        shouldRun();
-        buildFrameworkMethodTree();
-    }
-
-    private void shouldRun() {
-        for (FrameworkMethod method : getChildren()) {
-            shouldRun.add(getName(method));
+        int maximumPoolSize = klass.isAnnotationPresent(Concurrency.class) ? klass.getAnnotation(Concurrency.class).maximumPoolSize() : 1;
+        if (maximumPoolSize < 1) {
+            throw new IllegalArgumentException("maximumPoolSize < 1");
         }
+        scheduler = new ConcurrentDependsOnRunnerScheduler(maximumPoolSize);
+        setScheduler(scheduler);
+        getChildren().stream().forEach(m -> shouldRun.add(getName(m)));
+        getChildren().stream().forEach(m -> nameToMethod.put(getName(m), m));
+        getChildren().stream().forEach(m -> tree.addDependecy(getName(m), getDependsOnTests(m)));
+        tree.verify();
     }
 
     private String getName(FrameworkMethod method) {
-        return getTestClass().getName() + "#" + method.getName();
+        return getName(method.getName());
     }
 
     private static String getName(Description description) {
-        return description.getClassName() + "#" + description.getMethodName();
+        return getName(description.getClassName(), description.getMethodName());
     }
 
-    private void buildFrameworkMethodTree() {
-        for (FrameworkMethod method : getChildren()) {
-            nameToMethod.put(getName(method), method);
-        }
+    private String getName(String methodName) {
+        return getName(getTestClass().getName(), methodName);
+    }
+
+    private static String getName(String className, String methodName) {
+        return className + "#" + methodName;
     }
 
     @Override
     protected void runChild(FrameworkMethod method, @SuppressWarnings("hiding") RunNotifier notifier) {
-        if (shouldWaitAndWait(method)) {
+        if (shouldWait(method)) {
             scheduleDependsOnTests(method);
         } else if (alreadyInvoked(method)) {
             return;
@@ -102,10 +99,9 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     }
 
     private void scheduleDependsOnTests(FrameworkMethod method) {
-        for (String dependsOn : getDependsOnTests(method)) {
-            if (scheduled.add(dependsOn)) {
-                scheduler.schedule(() -> runChild(nameToMethod.get(dependsOn), notifier));
-            }
+        for (String test : getDependsOnTests(method)) {
+            shouldRun.add(getName(method));
+            scheduler.schedule(() -> runChild(nameToMethod.get(test), notifier));
         }
     }
 
@@ -113,71 +109,91 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         return !invoked.add(getName(method));
     }
 
-    private boolean shouldWaitAndWait(FrameworkMethod method) {
-        String[] tests = getDependsOnTests(method);
-        synchronized (waiting) {
-            boolean wait = Stream.of(tests).anyMatch(m -> !finished.contains(m));
-            if (wait) {
-                waiting.add(method);
-            }
-            return wait;
-        }
-    }
-
     private boolean shouldIgnore(FrameworkMethod method) {
-        String[] tests = getDependsOnTests(method);
-        return Stream.of(tests).anyMatch(m -> failed.contains(m));
+        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> failed.contains(m));
     }
 
     private String[] getDependsOnTests(FrameworkMethod method) {
-        if (!method.getMethod().isAnnotationPresent(DependsOn.class)) {
+        if (!method.getMethod().isAnnotationPresent(DependsOnTests.class)) {
             return new String[0];
         }
-        DependsOn dependsOn = method.getMethod().getAnnotation(DependsOn.class);
-        List<String> tests = new ArrayList<>();
-        for (String test : dependsOn.tests()) {
-            tests.add(getTestClass().getName() + "#" + test);
-        }
-        return tests.toArray(new String[0]);
+        DependsOnTests dependsOn = method.getMethod().getAnnotation(DependsOnTests.class);
+        return Arrays.stream(dependsOn.value()).map(t -> getName(t)).collect(Collectors.toList()).toArray(new String[0]);
     }
 
     @Override
     public void run(@SuppressWarnings("hiding") RunNotifier notifier) {
         this.notifier = notifier;
         this.notifier.addListener(newRunListener());
-        scheduler.schedule(newBackgroundSchedulerThread());
         super.run(this.notifier);
     }
 
     @Override
     public void filter(Filter filter) throws NoTestsRemainException {
-        RecordingFilter outer = new RecordingFilter(filter);
+        RecordingFilter outer = new RecordingFilter(filter, d -> getName(d));
         super.filter(outer);
-        shouldRun.removeAll(outer.getShouldNotRun());
+        shouldRun.retainAll(outer.getShouldRun());
     }
 
-    private static class RecordingFilter extends Filter {
+    private boolean shouldWait(FrameworkMethod method) {
+        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> !finished.contains(m));
+    }
+
+    private RunListener newRunListener() {
+        return new RunListener() {
+            @Override
+            public void testFailure(Failure failure) throws Exception {
+                failed.add(getName(failure.getDescription()));
+            }
+
+            @Override
+            public void testAssumptionFailure(Failure failure) {
+                failed.add(getName(failure.getDescription()));
+            }
+
+            @Override
+            public void testIgnored(Description description) throws Exception {
+                failed.add(getName(description));
+                scheduleOnDepends(description);
+            }
+
+            @Override
+            public void testFinished(Description description) throws Exception {
+                scheduleOnDepends(description);
+            }
+
+            private void scheduleOnDepends(Description description) {
+                finished.add(getName(description));
+                tree.next(getName(description)).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToMethod.get(t), notifier));
+            }
+        };
+    }
+
+    private class RecordingFilter extends Filter {
 
         private final Filter inner;
-        private final Set<String> shouldNotRun;
+        private final Function<Description, String> nameResolver;
+        @SuppressWarnings("hiding")
+        private final Set<String> shouldRun;
 
-        public RecordingFilter(Filter inner) {
+        private RecordingFilter(Filter inner, Function<Description, String> nameResolver) {
             this.inner = inner;
-            shouldNotRun = new HashSet<>();
+            this.nameResolver = nameResolver;
+            shouldRun = new HashSet<>();
+        }
+
+        public Set<String> getShouldRun() {
+            return shouldRun;
         }
 
         @Override
         public boolean shouldRun(Description description) {
             if (inner.shouldRun(description)) {
+                shouldRun.add(nameResolver.apply(description));
                 return true;
             } else {
-                shouldNotRun.add(getName(description));
                 return false;
             }
-        }
-
-        public Set<String> getShouldNotRun() {
-            return shouldNotRun;
         }
 
         @Override
@@ -195,67 +211,6 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
             return inner.intersect(second);
         }
 
-    }
-
-    private Runnable newBackgroundSchedulerThread() {
-        return () -> {
-            while (true) {
-                synchronized (waiting) {
-                    if (waiting.isEmpty() && finished.containsAll(shouldRun)) {
-                        return;
-                    }
-                    for (Iterator<FrameworkMethod> iter = waiting.iterator(); iter.hasNext();) {
-                        FrameworkMethod method = iter.next();
-                        if (!shouldWait(method)) {
-                            iter.remove();
-                            scheduler.schedule(() -> runChild(method, notifier));
-                        }
-                    }
-                    try {
-                        waiting.wait();
-                    } catch (InterruptedException e) {
-                        return;
-                    }
-                }
-            }
-        };
-    }
-
-    private boolean shouldWait(FrameworkMethod method) {
-        String[] tests = getDependsOnTests(method);
-        return Stream.of(tests).anyMatch(m -> !finished.contains(m));
-    }
-
-    private RunListener newRunListener() {
-        return new RunListener() {
-            @Override
-            public void testFailure(Failure failure) throws Exception {
-                failed.add(failure.getDescription().getMethodName());
-            }
-
-            @Override
-            public void testAssumptionFailure(Failure failure) {
-                failed.add(failure.getDescription().getMethodName());
-            }
-
-            @Override
-            public void testIgnored(Description description) throws Exception {
-                failed.add(getName(description));
-                notifyBackgroudThread(description);
-            }
-
-            @Override
-            public void testFinished(Description description) throws Exception {
-                notifyBackgroudThread(description);
-            }
-
-            private void notifyBackgroudThread(Description description) {
-                synchronized (waiting) {
-                    finished.add(getName(description));
-                    waiting.notify();
-                }
-            }
-        };
     }
 
     private static class ConcurrentDependsOnRunnerScheduler implements RunnerScheduler {
