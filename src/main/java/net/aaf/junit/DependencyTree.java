@@ -64,7 +64,7 @@ public class DependencyTree {
             if (!s.add(d)) {
                 throw new IllegalStateException("loop detected in dependency tree ('" + d + "')");
             }
-            detectLoops(d, s);
+            detectLoops(d, new HashSet<>(s));
         }
     }
 
