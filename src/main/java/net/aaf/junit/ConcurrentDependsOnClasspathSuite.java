@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionService;
@@ -30,9 +31,12 @@ import org.junit.extensions.cpsuite.ClasspathSuite;
 import org.junit.internal.builders.IgnoredClassRunner;
 import org.junit.runner.Description;
 import org.junit.runner.Runner;
+import org.junit.runner.manipulation.Filter;
+import org.junit.runner.manipulation.NoTestsRemainException;
 import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunListener;
 import org.junit.runner.notification.RunNotifier;
+import org.junit.runners.ParentRunner;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.RunnerBuilder;
 import org.junit.runners.model.RunnerScheduler;
@@ -49,6 +53,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     private final SuiteRunListener listener = new SuiteRunListener();
     private final DependencyTree tree = new DependencyTree();
     private final ConcurrentDependsOnSuiteScheduler scheduler;
+    private final MethodFilter methodFilter;
     private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> started = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> failed = Collections.synchronizedSet(new HashSet<>());
@@ -58,6 +63,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
     public ConcurrentDependsOnClasspathSuite(Class<?> suiteClass, RunnerBuilder builder) throws InitializationError {
         super(suiteClass, builder);
+        methodFilter = newMethodFilter(suiteClass.getAnnotation(MethodFilters.class));
         int maximumPoolSize = isAnnotationPresent(suiteClass) && !"true".equals(System.getProperty("dependson.suite.serial")) ? maximumPoolSize(suiteClass)
                 : 1;
         if (maximumPoolSize < 1) {
@@ -73,6 +79,10 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             failed.add(getClassName(r));
             finished.add(getClassName(r));
         });
+    }
+
+    private static MethodFilter newMethodFilter(MethodFilters annotation) {
+        return annotation != null ? new MethodFilter(annotation.clazz(), Arrays.asList(annotation.methods())) : null;
     }
 
     private static boolean isAnnotationPresent(Class<?> suiteClass) {
@@ -94,12 +104,14 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         } else if (alreadyInvoked(runner)) {
             return;
         } else if (shouldIgnore(runner)) {
-            super.runChild(scheduler.newClassRunner(getClassName(runner), new IgnoredClassRunner(runner.getDescription().getTestClass())), notifier);
+            super.runChild(
+                    scheduler.newClassRunner(getClassName(runner), new IgnoredClassRunner(runner.getDescription().getTestClass()), methodFilter),
+                    notifier);
             runner.getDescription().getChildren().stream().forEach(t -> notifier.fireTestIgnored(t));
             failed.add(getClassName(runner));
             finished.add(getClassName(runner));
         } else {
-            super.runChild(scheduler.newClassRunner(getClassName(runner), runner), notifier);
+            super.runChild(scheduler.newClassRunner(getClassName(runner), runner, methodFilter), notifier);
         }
     }
 
@@ -170,6 +182,32 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
     }
 
+    private static class MethodFilter extends Filter {
+
+        private final Class<?> clazz;
+        private final List<String> methods;
+
+        private MethodFilter(Class<?> clazz, List<String> methods) {
+            this.clazz = clazz;
+            this.methods = methods;
+        }
+
+        @Override
+        public boolean shouldRun(Description description) {
+            return methods.contains(description.getMethodName());
+        }
+
+        @Override
+        public String describe() {
+            return "method filter";
+        }
+
+        private Class<?> getClazz() {
+            return clazz;
+        }
+
+    }
+
     private static class ConcurrentDependsOnSuiteScheduler implements RunnerScheduler {
 
         private final AtomicInteger classes = new AtomicInteger();
@@ -205,8 +243,8 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             }
         }
 
-        private ClassRunner newClassRunner(String className, Runner r) {
-            return new ClassRunner(className, r);
+        private ClassRunner newClassRunner(String className, Runner r, MethodFilter filter) {
+            return new ClassRunner(className, r, filter);
         }
 
         private ClassChildStatement newClassChildStatement(String className, Runnable r) {
@@ -217,10 +255,24 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
             private final String className;
             private final Runner r;
+            private final MethodFilter filter;
 
-            private ClassRunner(String className, Runner r) {
+            private ClassRunner(String className, Runner r, MethodFilter filter) {
                 this.className = className;
                 this.r = r;
+                this.filter = filter;
+                filter();
+            }
+
+            private void filter() {
+                if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.getClazz().getSimpleName())) {
+                    return;
+                }
+                try {
+                    ((ParentRunner<?>) r).filter(filter);
+                } catch (NoTestsRemainException e) {
+                    // ignore, what else can we do here?
+                }
             }
 
             @Override
