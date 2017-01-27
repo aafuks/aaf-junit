@@ -119,7 +119,24 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     }
 
     private boolean shouldIgnore(FrameworkMethod method) {
-        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> failed.contains(m));
+        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> failed.contains(m)) || !enabledWith(method);
+    }
+
+    private static boolean enabledWith(FrameworkMethod method) {
+        EnabledWith enabledWith = method.getAnnotation(EnabledWith.class);
+        return enabledWith == null || sysPropEquals(enabledWith.value());
+    }
+
+    private static boolean sysPropEquals(String prop) {
+        int equalIdx = prop.indexOf('=');
+        if (equalIdx == -1 || equalIdx == prop.length() - 1) {
+            String key = prop.substring(0, equalIdx != -1 ? equalIdx : prop.length());
+            return System.getProperty(key) != null;
+        } else {
+            String key = prop.substring(0, equalIdx);
+            String value = prop.substring(equalIdx + 1);
+            return value.equalsIgnoreCase(System.getProperty(key));
+        }
     }
 
     private String[] getDependsOnTests(FrameworkMethod method) {

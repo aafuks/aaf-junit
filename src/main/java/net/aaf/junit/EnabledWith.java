@@ -20,13 +20,13 @@ import java.lang.annotation.Target;
 
 /**
  * @author Amihai Fuks
- * @version Apr 24, 2016
+ * @version Jan 26, 2017
  * @since 1.0.0
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
-public @interface Concurrency {
+@Target(ElementType.METHOD)
+public @interface EnabledWith {
 
-    int maximumPoolSize();
+    String value();
 
 }
