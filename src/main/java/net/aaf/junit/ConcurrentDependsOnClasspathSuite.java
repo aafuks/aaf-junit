@@ -265,7 +265,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             }
 
             private void filter() {
-                if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.getClazz().getSimpleName())) {
+                if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.getClazz().getName())) {
                     return;
                 }
                 try {
