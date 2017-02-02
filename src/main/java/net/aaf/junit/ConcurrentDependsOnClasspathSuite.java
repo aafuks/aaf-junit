@@ -104,11 +104,11 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         } else if (alreadyInvoked(runner)) {
             return;
         } else if (shouldIgnore(runner)) {
+            failed.add(getClassName(runner));
             super.runChild(
                     scheduler.newClassRunner(getClassName(runner), new IgnoredClassRunner(runner.getDescription().getTestClass()), methodFilter),
                     notifier);
             runner.getDescription().getChildren().stream().forEach(t -> notifier.fireTestIgnored(t));
-            failed.add(getClassName(runner));
             finished.add(getClassName(runner));
         } else {
             super.runChild(scheduler.newClassRunner(getClassName(runner), runner, methodFilter), notifier);
