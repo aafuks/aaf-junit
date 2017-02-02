@@ -28,12 +28,12 @@ import java.util.stream.Collectors;
  * @version Dec 11, 2016
  * @since 1.0.0
  */
-public class DependencyTree {
+public class DependencyGraph {
 
     private final Map<String, List<String>> onDepends;
     private final Map<String, List<String>> dependsOn;
 
-    public DependencyTree() {
+    public DependencyGraph() {
         onDepends = new HashMap<>();
         dependsOn = new HashMap<>();
     }
@@ -62,7 +62,7 @@ public class DependencyTree {
     private void detectLoops(String root, Set<String> s) {
         for (String d : dependsOn.get(root)) {
             if (!s.add(d)) {
-                throw new IllegalStateException("loop detected in dependency tree ('" + d + "')");
+                throw new IllegalStateException("loop detected in dependency graph ('" + d + "')");
             }
             detectLoops(d, new HashSet<>(s));
         }
@@ -71,7 +71,7 @@ public class DependencyTree {
     private void detectMissingOnDepends() {
         for (String k : onDepends.keySet()) {
             if (!dependsOn.containsKey(k)) {
-                throw new IllegalStateException("'" + k + "' is being depended on but does not exist in dependency tree");
+                throw new IllegalStateException("'" + k + "' is being depended on but does not exist in dependency graph");
             }
         }
     }
@@ -86,6 +86,12 @@ public class DependencyTree {
         }
         onDepends.get(subject).forEach(d -> dependsOn.get(d).remove(subject));
         return next();
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        return sb.toString();
     }
 
 }

@@ -48,7 +48,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     private volatile RunNotifier notifier;
 
     private final ConcurrentDependsOnRunnerScheduler scheduler;
-    private final DependencyTree tree = new DependencyTree();
+    private final DependencyGraph graph = new DependencyGraph();
     private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> failed = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> finished = Collections.synchronizedSet(new HashSet<>());
@@ -66,8 +66,8 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         setScheduler(scheduler);
         getChildren().stream().forEach(m -> shouldRun.add(getName(m)));
         getChildren().stream().forEach(m -> nameToMethod.put(getName(m), m));
-        getChildren().stream().forEach(m -> tree.addDependecy(getName(m), getDependsOnTests(m)));
-        tree.verify();
+        getChildren().stream().forEach(m -> graph.addDependecy(getName(m), getDependsOnTests(m)));
+        graph.verify();
     }
 
     private static boolean isAnnotationPresent(Class<?> klass) {
@@ -190,7 +190,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
             private void scheduleOnDepends(Description description) {
                 finished.add(getName(description));
-                tree.next(getName(description)).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToMethod.get(t), notifier));
+                graph.next(getName(description)).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToMethod.get(t), notifier));
             }
         };
     }

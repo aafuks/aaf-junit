@@ -51,7 +51,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     private volatile RunNotifier notifier;
 
     private final SuiteRunListener listener = new SuiteRunListener();
-    private final DependencyTree tree = new DependencyTree();
+    private final DependencyGraph graph = new DependencyGraph();
     private final ConcurrentDependsOnSuiteScheduler scheduler;
     private final MethodFilter methodFilter;
     private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
@@ -73,8 +73,8 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         setScheduler(scheduler);
         getChildren().stream().forEach(r -> shouldRun.add(getClassName(r)));
         getChildren().stream().forEach(r -> nameToRunner.put(getClassName(r), r));
-        getChildren().stream().forEach(r -> tree.addDependecy(getClassName(r), getDependsOnClasses(r)));
-        tree.verify();
+        getChildren().stream().forEach(r -> graph.addDependecy(getClassName(r), getDependsOnClasses(r)));
+        graph.verify();
         getChildren().stream().filter(r -> r instanceof IgnoredClassRunner).forEach(r -> {
             failed.add(getClassName(r));
             finished.add(getClassName(r));
@@ -176,7 +176,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         private void classFinished(String className) {
             if (started.contains(className)) {
                 finished.add(className);
-                tree.next(className).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToRunner.get(t), notifier));
+                graph.next(className).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToRunner.get(t), notifier));
             }
         }
 
