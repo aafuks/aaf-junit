@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
  */
 public class DependencyGraph {
 
+    private static final char NL = '\n';
+
     private final Map<String, List<String>> onDepends;
     private final Map<String, List<String>> dependsOn;
 
@@ -91,6 +93,10 @@ public class DependencyGraph {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
+        sb.append("depends on:").append(NL);
+        dependsOn.entrySet().stream().forEach(e -> sb.append(e.getKey() + ": " + e.getValue() + NL));
+        sb.append("on depends:").append(NL);
+        onDepends.entrySet().stream().forEach(e -> sb.append(e.getKey() + ": " + e.getValue() + NL));
         return sb.toString();
     }
 
