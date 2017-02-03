@@ -79,6 +79,9 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             failed.add(getClassName(r));
             finished.add(getClassName(r));
         });
+        if (System.getProperties().contains("dependency.graph.print")) {
+            System.out.println(graph.toString());
+        }
     }
 
     private static MethodFilter newMethodFilter(MethodFilters annotation) {

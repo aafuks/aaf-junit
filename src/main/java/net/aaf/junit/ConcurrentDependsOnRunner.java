@@ -57,7 +57,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     public ConcurrentDependsOnRunner(Class<?> klass) throws InitializationError {
         super(klass);
-        int maximumPoolSize = isAnnotationPresent(klass) && !"true".equals(System.getProperty("dependson.runner.serial")) ? maximumPoolSize(klass)
+        int maximumPoolSize = isAnnotationPresent(klass) && !sysPropEquals("dependson.runner.serial=true") ? maximumPoolSize(klass)
                 : 1;
         if (maximumPoolSize < 1) {
             throw new IllegalArgumentException("maximumPoolSize < 1");
@@ -68,6 +68,9 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         getChildren().stream().forEach(m -> nameToMethod.put(getName(m), m));
         getChildren().stream().forEach(m -> graph.addDependecy(getName(m), getDependsOnTests(m)));
         graph.verify();
+        if (sysPropEquals("dependency.graph.print")) {
+            System.out.println(graph.toString());
+        }
     }
 
     private static boolean isAnnotationPresent(Class<?> klass) {
