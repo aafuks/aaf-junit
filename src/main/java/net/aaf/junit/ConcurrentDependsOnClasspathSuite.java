@@ -209,6 +209,10 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             return clazz;
         }
 
+        private List<String> getMethods() {
+            return methods;
+        }
+
     }
 
     private static class ConcurrentDependsOnSuiteScheduler implements RunnerScheduler {
@@ -271,10 +275,21 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
                 if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.getClazz().getName())) {
                     return;
                 }
+                verifyAllMethodExists(r);
                 try {
                     ((ParentRunner<?>) r).filter(filter);
                 } catch (NoTestsRemainException e) {
                     // ignore, what else can we do here?
+                }
+            }
+
+            private void verifyAllMethodExists(@SuppressWarnings("hiding") Runner r) {
+                List<String> classMethods = r.getDescription().getChildren().stream().map(d -> d.getMethodName()).collect(Collectors.toList());
+                for (String m : filter.getMethods()) {
+                    if (!classMethods.contains(m)) {
+                        System.err.println("method '" + m + "' is filtered by " + MethodFilter.class + " but does not exist in class '" + className
+                                + "'");
+                    }
                 }
             }
 
