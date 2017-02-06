@@ -57,7 +57,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     public ConcurrentDependsOnRunner(Class<?> klass) throws InitializationError {
         super(klass);
-        int maximumPoolSize = isAnnotationPresent(klass) && !sysPropEquals("dependson.runner.serial=true") ? maximumPoolSize(klass)
+        int maximumPoolSize = isAnnotationPresent(klass) && !sysPropEquals("dependson.runner.serial") ? maximumPoolSize(klass)
                 : 1;
         if (maximumPoolSize < 1) {
             throw new IllegalArgumentException("maximumPoolSize < 1");

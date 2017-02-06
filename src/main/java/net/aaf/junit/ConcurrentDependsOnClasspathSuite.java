@@ -64,7 +64,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     public ConcurrentDependsOnClasspathSuite(Class<?> suiteClass, RunnerBuilder builder) throws InitializationError {
         super(suiteClass, builder);
         methodFilter = newMethodFilter(suiteClass.getAnnotation(MethodFilters.class));
-        int maximumPoolSize = isAnnotationPresent(suiteClass) && !"true".equals(System.getProperty("dependson.suite.serial")) ? maximumPoolSize(suiteClass)
+        int maximumPoolSize = isAnnotationPresent(suiteClass) && !System.getProperties().contains("dependson.suite.serial") ? maximumPoolSize(suiteClass)
                 : 1;
         if (maximumPoolSize < 1) {
             throw new IllegalArgumentException("maximumPoolSize < 1");
