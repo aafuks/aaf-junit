@@ -112,7 +112,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private void scheduleDependsOnTests(FrameworkMethod method) {
         for (String test : getDependsOnTests(method)) {
-            shouldRun.add(getName(method));
+            shouldRun.add(test);
             scheduler.schedule(() -> runChild(nameToMethod.get(test), notifier));
         }
     }
@@ -192,8 +192,12 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
             }
 
             private void scheduleOnDepends(Description description) {
-                finished.add(getName(description));
-                graph.next(getName(description)).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToMethod.get(t), notifier));
+                if (finished.add(getName(description))) {
+                    graph.next(getName(description)).stream().filter(t -> shouldRun.contains(t))
+                    .forEach(t -> {
+                        scheduler.schedule(() -> runChild(nameToMethod.get(t), notifier));
+                    });
+                }
             }
         };
     }

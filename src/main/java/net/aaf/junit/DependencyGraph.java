@@ -21,7 +21,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * @author Amihai Fuks
@@ -78,16 +77,18 @@ public class DependencyGraph {
         }
     }
 
-    private synchronized List<String> next() {
-        return dependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).map(e -> e.getKey()).collect(Collectors.toList());
-    }
-
     public synchronized List<String> next(String subject) {
         if (!onDepends.containsKey(subject)) {
             return Collections.emptyList();
         }
-        onDepends.get(subject).forEach(d -> dependsOn.get(d).remove(subject));
-        return next();
+        List<String> next = new ArrayList<>();
+        onDepends.get(subject).forEach(d -> {
+            dependsOn.get(d).remove(subject);
+            if (dependsOn.get(d).isEmpty()) {
+                next.add(d);
+            }
+        });
+        return next;
     }
 
     @Override
