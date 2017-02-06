@@ -120,7 +120,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
     private void scheduleDependsOnClasses(Runner runner) {
         for (String dependsOn : getDependsOnClasses(runner)) {
-            shouldRun.add(getClassName(runner));
+            shouldRun.add(dependsOn);
             scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> runChild(nameToRunner.get(dependsOn), notifier)));
         }
     }
@@ -178,8 +178,10 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
         private void classFinished(String className) {
             if (started.contains(className)) {
-                finished.add(className);
-                graph.next(className).stream().filter(t -> shouldRun.contains(t)).forEach(t -> runChild(nameToRunner.get(t), notifier));
+                if (finished.add(className)) {
+                    graph.next(className).stream().filter(t -> shouldRun.contains(t))
+                    .forEach(t -> scheduler.schedule(() -> runChild(nameToRunner.get(t), notifier)));
+                }
             }
         }
 
