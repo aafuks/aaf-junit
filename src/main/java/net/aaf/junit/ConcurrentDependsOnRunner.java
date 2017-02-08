@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionService;
@@ -37,6 +38,7 @@ import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.RunnerScheduler;
+import org.junit.runners.model.Statement;
 
 /**
  * @author Amihai Fuks
@@ -49,16 +51,13 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private final ConcurrentDependsOnRunnerScheduler scheduler;
     private final DependencyGraph graph = new DependencyGraph();
-    private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> failed = Collections.synchronizedSet(new HashSet<>());
-    private final Set<String> finished = Collections.synchronizedSet(new HashSet<>());
     private final Map<String, FrameworkMethod> nameToMethod = new HashMap<>();
     private final Set<String> shouldRun = Collections.synchronizedSet(new HashSet<>());
 
     public ConcurrentDependsOnRunner(Class<?> klass) throws InitializationError {
         super(klass);
-        int maximumPoolSize = isAnnotationPresent(klass) && !sysPropEquals("dependson.runner.serial") ? maximumPoolSize(klass)
-                : 1;
+        int maximumPoolSize = isAnnotationPresent(klass) && !runSerial() ? maximumPoolSize(klass) : 1;
         if (maximumPoolSize < 1) {
             throw new IllegalArgumentException("maximumPoolSize < 1");
         }
@@ -66,11 +65,21 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         setScheduler(scheduler);
         getChildren().stream().forEach(m -> shouldRun.add(getName(m)));
         getChildren().stream().forEach(m -> nameToMethod.put(getName(m), m));
+        verifyDependencyGraph();
+    }
+
+    private static boolean runSerial() {
+        return sysPropEquals("dependson.runner.serial");
+    }
+
+    private void verifyDependencyGraph() throws InitializationError {
         getChildren().stream().forEach(m -> graph.addDependecy(getName(m), getDependsOnTests(m)));
         graph.verify();
         if (sysPropEquals("dependency.graph.print")) {
+            System.out.println(getTestClass().getName());
             System.out.println(graph.toString());
         }
+        graph.clear();
     }
 
     private static boolean isAnnotationPresent(Class<?> klass) {
@@ -99,26 +108,11 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     @Override
     protected void runChild(FrameworkMethod method, @SuppressWarnings("hiding") RunNotifier notifier) {
-        if (shouldWait(method)) {
-            scheduleDependsOnTests(method);
-        } else if (alreadyInvoked(method)) {
-            return;
-        } else if (shouldIgnore(method)) {
+        if (shouldIgnore(method)) {
             notifier.fireTestIgnored(describeChild(method));
         } else {
             super.runChild(method, notifier);
         }
-    }
-
-    private void scheduleDependsOnTests(FrameworkMethod method) {
-        for (String test : getDependsOnTests(method)) {
-            shouldRun.add(test);
-            scheduler.schedule(() -> runChild(nameToMethod.get(test), notifier));
-        }
-    }
-
-    private boolean alreadyInvoked(FrameworkMethod method) {
-        return !invoked.add(getName(method));
     }
 
     private boolean shouldIgnore(FrameworkMethod method) {
@@ -154,7 +148,42 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     public void run(@SuppressWarnings("hiding") RunNotifier notifier) {
         this.notifier = notifier;
         this.notifier.addListener(newRunListener());
+        reCreateDependencyGraph();
         super.run(this.notifier);
+    }
+
+    private void reCreateDependencyGraph() {
+        Set<String> tests = new HashSet<>(shouldRun);
+        while (!tests.isEmpty()) {
+            tests = addDependencies(tests);
+        }
+    }
+
+    @Override
+    protected Statement childrenInvoker(@SuppressWarnings("hiding") final RunNotifier notifier) {
+        return new Statement() {
+            @Override
+            public void evaluate() {
+                runChildren(notifier);
+            }
+        };
+    }
+
+    private void runChildren(@SuppressWarnings("hiding") final RunNotifier notifier) {
+        RunnerScheduler currentScheduler = scheduler;
+        try {
+            List<FrameworkMethod> roots = graph.getRoots().stream().map(r -> nameToMethod.get(r)).collect(Collectors.toList());
+            for (FrameworkMethod each : roots) {
+                currentScheduler.schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                        ConcurrentDependsOnRunner.this.runChild(each, notifier);
+                    }
+                });
+            }
+        } finally {
+            currentScheduler.finished();
+        }
     }
 
     @Override
@@ -164,8 +193,14 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
         shouldRun.retainAll(outer.getShouldRun());
     }
 
-    private boolean shouldWait(FrameworkMethod method) {
-        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> !finished.contains(m));
+    private Set<String> addDependencies(Set<String> tests) {
+        Set<String> ret = new HashSet<>();
+        for (String test : tests) {
+            String[] dependsOn = getDependsOnTests(nameToMethod.get(test));
+            ret.addAll(Arrays.asList(dependsOn));
+            graph.addDependecy(test, dependsOn);
+        }
+        return ret;
     }
 
     private RunListener newRunListener() {
@@ -192,12 +227,9 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
             }
 
             private void scheduleOnDepends(Description description) {
-                if (finished.add(getName(description))) {
-                    graph.next(getName(description)).stream().filter(t -> shouldRun.contains(t))
-                    .forEach(t -> {
-                        scheduler.schedule(() -> runChild(nameToMethod.get(t), notifier));
-                    });
-                }
+                graph.next(getName(description)).stream().forEach(t -> {
+                    scheduler.schedule(() -> runChild(nameToMethod.get(t), notifier));
+                });
             }
         };
     }

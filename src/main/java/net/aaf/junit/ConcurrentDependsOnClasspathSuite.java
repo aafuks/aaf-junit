@@ -40,6 +40,7 @@ import org.junit.runners.ParentRunner;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.RunnerBuilder;
 import org.junit.runners.model.RunnerScheduler;
+import org.junit.runners.model.Statement;
 
 /**
  * @author Amihai Fuks
@@ -54,18 +55,14 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     private final DependencyGraph graph = new DependencyGraph();
     private final ConcurrentDependsOnSuiteScheduler scheduler;
     private final MethodFilter methodFilter;
-    private final Set<String> invoked = Collections.synchronizedSet(new HashSet<>());
-    private final Set<String> started = Collections.synchronizedSet(new HashSet<>());
     private final Set<String> failed = Collections.synchronizedSet(new HashSet<>());
-    private final Set<String> finished = Collections.synchronizedSet(new HashSet<>());
-    private final Map<String, Runner> nameToRunner = new HashMap<>();
     private final Set<String> shouldRun = Collections.synchronizedSet(new HashSet<>());
+    private final Map<String, Runner> nameToRunner = new HashMap<>();
 
     public ConcurrentDependsOnClasspathSuite(Class<?> suiteClass, RunnerBuilder builder) throws InitializationError {
         super(suiteClass, builder);
         methodFilter = newMethodFilter(suiteClass.getAnnotation(MethodFilters.class));
-        int maximumPoolSize = isAnnotationPresent(suiteClass) && !System.getProperties().contains("dependson.suite.serial") ? maximumPoolSize(suiteClass)
-                : 1;
+        int maximumPoolSize = isAnnotationPresent(suiteClass) && !runSerial() ? maximumPoolSize(suiteClass) : 1;
         if (maximumPoolSize < 1) {
             throw new IllegalArgumentException("maximumPoolSize < 1");
         }
@@ -73,15 +70,24 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         setScheduler(scheduler);
         getChildren().stream().forEach(r -> shouldRun.add(getClassName(r)));
         getChildren().stream().forEach(r -> nameToRunner.put(getClassName(r), r));
-        getChildren().stream().forEach(r -> graph.addDependecy(getClassName(r), getDependsOnClasses(r)));
-        graph.verify();
+        verifyDependecyGraph();
         getChildren().stream().filter(r -> r instanceof IgnoredClassRunner).forEach(r -> {
             failed.add(getClassName(r));
-            finished.add(getClassName(r));
         });
-        if (System.getProperties().contains("dependency.graph.print")) {
+    }
+
+    private void verifyDependecyGraph() throws InitializationError {
+        getChildren().stream().forEach(r -> graph.addDependecy(getClassName(r), getDependsOnClasses(r)));
+        graph.verify();
+        if (System.getProperties().keySet().contains("dependency.graph.print")) {
+            System.out.println(getTestClass().getName());
             System.out.println(graph.toString());
         }
+        graph.clear();
+    }
+
+    private static boolean runSerial() {
+        return System.getProperties().keySet().contains("dependson.suite.serial");
     }
 
     private static MethodFilter newMethodFilter(MethodFilters annotation) {
@@ -101,36 +107,43 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     }
 
     @Override
+    protected Statement childrenInvoker(@SuppressWarnings("hiding") final RunNotifier notifier) {
+        return new Statement() {
+            @Override
+            public void evaluate() {
+                runChildren(notifier);
+            }
+        };
+    }
+
+    private void runChildren(@SuppressWarnings("hiding") final RunNotifier notifier) {
+        RunnerScheduler currentScheduler = scheduler;
+        try {
+            List<Runner> roots = graph.getRoots().stream().map(r -> nameToRunner.get(r)).collect(Collectors.toList());
+            for (Runner each : roots) {
+                currentScheduler.schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                        ConcurrentDependsOnClasspathSuite.this.runChild(each, notifier);
+                    }
+                });
+            }
+        } finally {
+            currentScheduler.finished();
+        }
+    }
+
+    @Override
     protected void runChild(Runner runner, @SuppressWarnings("hiding") RunNotifier notifier) {
-        if (shouldWait(runner)) {
-            scheduleDependsOnClasses(runner);
-        } else if (alreadyInvoked(runner)) {
-            return;
-        } else if (shouldIgnore(runner)) {
+        if (shouldIgnore(runner)) {
             failed.add(getClassName(runner));
             super.runChild(
                     scheduler.newClassRunner(getClassName(runner), new IgnoredClassRunner(runner.getDescription().getTestClass()), methodFilter),
                     notifier);
             runner.getDescription().getChildren().stream().forEach(t -> notifier.fireTestIgnored(t));
-            finished.add(getClassName(runner));
         } else {
             super.runChild(scheduler.newClassRunner(getClassName(runner), runner, methodFilter), notifier);
         }
-    }
-
-    private void scheduleDependsOnClasses(Runner runner) {
-        for (String dependsOn : getDependsOnClasses(runner)) {
-            shouldRun.add(dependsOn);
-            scheduler.schedule(scheduler.newClassChildStatement(getClassName(runner), () -> runChild(nameToRunner.get(dependsOn), notifier)));
-        }
-    }
-
-    private boolean alreadyInvoked(Runner runner) {
-        return !invoked.add(getClassName(runner));
-    }
-
-    private boolean shouldWait(Runner runner) {
-        return Arrays.stream(getDependsOnClasses(runner)).anyMatch(c -> !finished.contains(c));
     }
 
     private boolean shouldIgnore(Runner runner) {
@@ -149,40 +162,50 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     public void run(@SuppressWarnings("hiding") RunNotifier notifier) {
         this.notifier = notifier;
         this.notifier.addListener(listener);
+        reCreateDependencyGraph();
         super.run(this.notifier);
+    }
+
+    private void reCreateDependencyGraph() {
+        Set<String> classes = new HashSet<>(shouldRun);
+        while (!classes.isEmpty()) {
+            classes = addDependencies(classes);
+        }
+    }
+
+    private Set<String> addDependencies(Set<String> classes) {
+        Set<String> ret = new HashSet<>();
+        for (String clazz : classes) {
+            String[] dependsOn = getDependsOnClasses(nameToRunner.get(clazz));
+            ret.addAll(Arrays.asList(dependsOn));
+            graph.addDependecy(clazz, dependsOn);
+        }
+        return ret;
     }
 
     private class SuiteRunListener extends RunListener {
 
         @Override
         public void testFailure(Failure failure) throws Exception {
-            started.add(failure.getDescription().getTestClass().getName());
             failed.add(failure.getDescription().getTestClass().getName());
         }
 
         @Override
         public void testAssumptionFailure(Failure failure) {
-            started.add(failure.getDescription().getTestClass().getName());
             failed.add(failure.getDescription().getTestClass().getName());
         }
 
         @Override
         public void testIgnored(Description description) throws Exception {
-            started.add(description.getTestClass().getName());
         }
 
         @Override
         public void testFinished(Description description) throws Exception {
-            started.add(description.getTestClass().getName());
         }
 
         private void classFinished(String className) {
-            if (started.contains(className)) {
-                if (finished.add(className)) {
-                    graph.next(className).stream().filter(t -> shouldRun.contains(t))
-                    .forEach(t -> scheduler.schedule(() -> runChild(nameToRunner.get(t), notifier)));
-                }
-            }
+            graph.next(className).stream().filter(t -> shouldRun.contains(t))
+            .forEach(t -> scheduler.schedule(() -> runChild(nameToRunner.get(t), notifier)));
         }
 
     }
@@ -205,14 +228,6 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         @Override
         public String describe() {
             return "method filter";
-        }
-
-        private Class<?> getClazz() {
-            return clazz;
-        }
-
-        private List<String> getMethods() {
-            return methods;
         }
 
     }
@@ -256,10 +271,6 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             return new ClassRunner(className, r, filter);
         }
 
-        private ClassChildStatement newClassChildStatement(String className, Runnable r) {
-            return new ClassChildStatement(className, r);
-        }
-
         private class ClassRunner extends Runner {
 
             private final String className;
@@ -274,7 +285,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             }
 
             private void filter() {
-                if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.getClazz().getName())) {
+                if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.clazz.getName())) {
                     return;
                 }
                 verifyAllMethodExists(r);
@@ -287,10 +298,10 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
             private void verifyAllMethodExists(@SuppressWarnings("hiding") Runner r) {
                 List<String> classMethods = r.getDescription().getChildren().stream().map(d -> d.getMethodName()).collect(Collectors.toList());
-                for (String m : filter.getMethods()) {
+                for (String m : filter.methods) {
                     if (!classMethods.contains(m)) {
-                        System.err.println("method '" + m + "' is filtered by " + MethodFilter.class + " but does not exist in class '" + className
-                                + "'");
+                        System.err.println("method '" + m + "' is filtered by " + MethodFilter.class.getSimpleName()
+                                + " but does not exist in class '" + className + "'");
                     }
                 }
             }
@@ -303,24 +314,6 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             @Override
             public void run(RunNotifier notifier) {
                 r.run(notifier);
-                listener.classFinished(className);
-            }
-
-        }
-
-        private class ClassChildStatement implements Runnable {
-
-            private String className;
-            private Runnable r;
-
-            private ClassChildStatement(String className, Runnable r) {
-                this.className = className;
-                this.r = r;
-            }
-
-            @Override
-            public void run() {
-                r.run();
                 listener.classFinished(className);
             }
 

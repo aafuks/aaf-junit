@@ -21,6 +21,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.junit.runners.model.InitializationError;
 
 /**
  * @author Amihai Fuks
@@ -31,8 +34,8 @@ public class DependencyGraph {
 
     private static final char NL = '\n';
 
-    private final Map<String, List<String>> onDepends;
-    private final Map<String, List<String>> dependsOn;
+    private final Map<String, Set<String>> onDepends;
+    private final Map<String, Set<String>> dependsOn;
 
     public DependencyGraph() {
         onDepends = new HashMap<>();
@@ -40,55 +43,62 @@ public class DependencyGraph {
     }
 
     public synchronized void addDependecy(String subject, String[] dependsOns) {
-        dependsOn.put(subject, new ArrayList<>(Arrays.asList(dependsOns)));
+        dependsOn.put(subject, new HashSet<>(Arrays.asList(dependsOns)));
         for (String d : dependsOns) {
-            if (!onDepends.containsKey(d)) {
-                onDepends.put(d, new ArrayList<>());
-            }
+            onDepends.putIfAbsent(d, new HashSet<>());
             onDepends.get(d).add(subject);
         }
     }
 
-    public synchronized void verify() {
+    public synchronized void verify() throws InitializationError {
         detectMissingOnDepends();
         detectLoops();
     }
 
-    private void detectLoops() {
+    private void detectLoops() throws InitializationError {
         for (String subject : dependsOn.keySet()) {
             detectLoops(subject, new HashSet<>());
         }
     }
 
-    private void detectLoops(String root, Set<String> s) {
+    private void detectLoops(String root, Set<String> s) throws InitializationError {
         for (String d : dependsOn.get(root)) {
             if (!s.add(d)) {
-                throw new IllegalStateException("loop detected in dependency graph ('" + d + "')");
+                throw new InitializationError("loop detected in dependency graph ('" + d + "')");
             }
             detectLoops(d, new HashSet<>(s));
         }
     }
 
-    private void detectMissingOnDepends() {
+    private void detectMissingOnDepends() throws InitializationError {
         for (String k : onDepends.keySet()) {
             if (!dependsOn.containsKey(k)) {
-                throw new IllegalStateException("'" + k + "' is being depended on but does not exist in dependency graph");
+                throw new InitializationError("'" + k + "' is being depended on but does not exist in dependency graph");
             }
         }
     }
 
-    public synchronized List<String> next(String subject) {
-        if (!onDepends.containsKey(subject)) {
+    public synchronized List<String> getRoots() {
+        return dependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).map(e -> e.getKey()).collect(Collectors.toList());
+    }
+
+    public synchronized List<String> next(String node) {
+        if (!onDepends.containsKey(node)) {
             return Collections.emptyList();
         }
         List<String> next = new ArrayList<>();
-        onDepends.get(subject).forEach(d -> {
-            dependsOn.get(d).remove(subject);
+        onDepends.get(node).forEach(d -> {
+            dependsOn.get(d).remove(node);
             if (dependsOn.get(d).isEmpty()) {
                 next.add(d);
             }
         });
         return next;
+    }
+
+    public synchronized void clear() {
+        dependsOn.clear();
+        onDepends.clear();
     }
 
     @Override
