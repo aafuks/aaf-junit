@@ -74,6 +74,21 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         getChildren().stream().filter(r -> r instanceof IgnoredClassRunner).forEach(r -> {
             failed.add(getClassName(r));
         });
+        if (methodFilter != null) {
+            applyMethodFilter();
+        }
+    }
+
+    private void applyMethodFilter() throws InitializationError {
+        for (Runner r : getChildren()) {
+            try {
+                if (r instanceof ParentRunner<?>) {
+                    ((ParentRunner<?>) r).filter(methodFilter);
+                }
+            } catch (NoTestsRemainException e) {
+                throw new InitializationError(e);
+            }
+        }
     }
 
     private void verifyDependecyGraph() throws InitializationError {
@@ -222,7 +237,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
 
         @Override
         public boolean shouldRun(Description description) {
-            return methods.contains(description.getMethodName());
+            return description.getTestClass() != clazz || methods.contains(description.getMethodName());
         }
 
         @Override
@@ -281,18 +296,8 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
                 this.className = className;
                 this.r = r;
                 this.filter = filter;
-                filter();
-            }
-
-            private void filter() {
-                if (filter == null || !(r instanceof ParentRunner) || !className.equals(filter.clazz.getName())) {
-                    return;
-                }
-                verifyAllMethodExists(r);
-                try {
-                    ((ParentRunner<?>) r).filter(filter);
-                } catch (NoTestsRemainException e) {
-                    // ignore, what else can we do here?
+                if (filter != null && r.getDescription().getTestClass() == filter.clazz) {
+                    verifyAllMethodExists(r);
                 }
             }
 
