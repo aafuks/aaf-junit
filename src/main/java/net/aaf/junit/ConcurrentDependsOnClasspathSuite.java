@@ -302,6 +302,10 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
             }
 
             private void verifyAllMethodExists(@SuppressWarnings("hiding") Runner r) {
+                if (r instanceof IgnoredClassRunner) {
+                    return;
+                }
+
                 List<String> classMethods = r.getDescription().getChildren().stream().map(d -> d.getMethodName()).collect(Collectors.toList());
                 for (String m : filter.methods) {
                     if (!classMethods.contains(m)) {
