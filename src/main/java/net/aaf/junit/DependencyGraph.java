@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,17 +38,32 @@ public class DependencyGraph {
     private final Map<String, Set<String>> onDepends;
     private final Map<String, Set<String>> dependsOn;
 
+    private final Map<String, Set<String>> onSynchronized;
+    private final Map<String, String> synchronizedOn;
+    private final Map<String, List<String>> synchronizedQueues;
+
     public DependencyGraph() {
         onDepends = new HashMap<>();
         dependsOn = new HashMap<>();
+
+        onSynchronized = new HashMap<>();
+        synchronizedOn = new HashMap<>();
+        synchronizedQueues = new HashMap<>();
     }
 
     public synchronized void addDependecy(String subject, String[] dependsOns) {
+        onDepends.putIfAbsent(subject, new HashSet<>());
         dependsOn.put(subject, new HashSet<>(Arrays.asList(dependsOns)));
         for (String d : dependsOns) {
             onDepends.putIfAbsent(d, new HashSet<>());
             onDepends.get(d).add(subject);
         }
+    }
+
+    public synchronized void addSynchronizedOn(String subject, String key) {
+        onSynchronized.putIfAbsent(key, new HashSet<>());
+        onSynchronized.get(key).add(subject);
+        synchronizedOn.put(subject, key);
     }
 
     public synchronized void verify() throws InitializationError {
@@ -79,26 +95,63 @@ public class DependencyGraph {
     }
 
     public synchronized List<String> getRoots() {
-        return dependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).map(e -> e.getKey()).collect(Collectors.toList());
+        return applySychronizedOn(dependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).map(e -> e.getKey()).collect(Collectors.toList()));
+    }
+
+    private List<String> applySychronizedOn(List<String> nodes) {
+        Iterator<String> iter = nodes.iterator();
+        while (iter.hasNext()) {
+            String node = iter.next();
+            if (synchronizedOn.containsKey(node) && shouldWait(node)) {
+                iter.remove();
+            }
+        }
+        return nodes;
+    }
+
+    private boolean shouldWait(String node) {
+        String key = synchronizedOn.get(node);
+        synchronizedQueues.putIfAbsent(key, new ArrayList<>());
+        synchronizedQueues.get(key).add(node);
+        return synchronizedQueues.get(key).get(0) != node;
     }
 
     public synchronized List<String> next(String node) {
         if (!onDepends.containsKey(node)) {
-            return Collections.emptyList();
+            return Collections.emptyList(); // there are multiple listeners in a suite that each gets all messages
         }
         List<String> next = new ArrayList<>();
+        addOnDepends(node, next);
+        addSynchronized(node, next);
+        return applySychronizedOn(next);
+    }
+
+    private void addSynchronized(String node, List<String> next) {
+        if (!synchronizedOn.containsKey(node)) {
+            return;
+        }
+        String key = synchronizedOn.get(node);
+        synchronizedQueues.get(key).remove(node);
+        onSynchronized.get(key).remove(node);
+        onSynchronized.get(key).stream().forEach(n -> next.add(n));
+    }
+
+    private void addOnDepends(String node, List<String> next) {
         onDepends.get(node).forEach(d -> {
             dependsOn.get(d).remove(node);
             if (dependsOn.get(d).isEmpty()) {
                 next.add(d);
             }
         });
-        return next;
     }
 
     public synchronized void clear() {
         dependsOn.clear();
         onDepends.clear();
+
+        onSynchronized.clear();
+        synchronizedOn.clear();
+        synchronizedQueues.clear();
     }
 
     @Override

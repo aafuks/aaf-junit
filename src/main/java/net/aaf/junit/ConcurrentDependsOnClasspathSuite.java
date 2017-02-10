@@ -165,6 +165,11 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         return Arrays.stream(getDependsOnClasses(runner)).anyMatch(c -> failed.contains(c));
     }
 
+    private static String getSynchronizedOn(Runner runner) {
+        SynchronizedOn synchronizedOn = runner.getDescription().getTestClass().getAnnotation(SynchronizedOn.class);
+        return synchronizedOn.value();
+    }
+
     private static String[] getDependsOnClasses(Runner runner) {
         if (!runner.getDescription().getTestClass().isAnnotationPresent(DependsOnClasses.class)) {
             return new String[0];
@@ -191,9 +196,13 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     private Set<String> addDependencies(Set<String> classes) {
         Set<String> ret = new HashSet<>();
         for (String clazz : classes) {
-            String[] dependsOn = getDependsOnClasses(nameToRunner.get(clazz));
+            Runner r = nameToRunner.get(clazz);
+            String[] dependsOn = getDependsOnClasses(r);
             ret.addAll(Arrays.asList(dependsOn));
             graph.addDependecy(clazz, dependsOn);
+            if (r.getDescription().getTestClass().isAnnotationPresent(SynchronizedOn.class)) {
+                graph.addSynchronizedOn(getClassName(r), getSynchronizedOn(r));
+            }
         }
         return ret;
     }
