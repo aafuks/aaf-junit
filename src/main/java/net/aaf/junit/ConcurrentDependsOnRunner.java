@@ -69,17 +69,21 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     }
 
     private static boolean runSerial() {
-        return sysPropsMatches("dependson.runner.serial");
+        return hasSystemProperty("dependson.runner.serial");
     }
 
     private void verifyDependencyGraph() throws InitializationError {
         getChildren().stream().forEach(m -> graph.addDependecy(getName(m), getDependsOnTests(m)));
         graph.verify();
-        if (sysPropsMatches("dependency.graph.print")) {
+        if (hasSystemProperty("dependency.graph.print")) {
             System.out.println(getTestClass().getName());
             System.out.println(graph.toString());
         }
         graph.clear();
+    }
+
+    private static boolean hasSystemProperty(String prop) {
+        return System.getProperty(prop) != null;
     }
 
     private static boolean isAnnotationPresent(Class<?> klass) {
@@ -121,26 +125,17 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private static boolean enabledWith(FrameworkMethod method) {
         EnabledWith enabledWith = method.getAnnotation(EnabledWith.class);
-        return enabledWith == null || sysPropsMatches(enabledWith.value());
+        return enabledWith == null || invoke(enabledWith.callback(), enabledWith.value());
     }
 
-    private static boolean sysPropsMatches(String... props) {
-        for (String prop : props) {
-            int equalIdx = prop.indexOf('=');
-            if (equalIdx == -1 || equalIdx == prop.length() - 1) {
-                String key = prop.substring(0, equalIdx != -1 ? equalIdx : prop.length());
-                if (System.getProperty(key) == null) {
-                    return false;
-                }
-            } else {
-                String key = prop.substring(0, equalIdx);
-                String value = prop.substring(equalIdx + 1);
-                if (!value.equalsIgnoreCase(System.getProperty(key))) {
-                    return false;
-                }
-            }
+    private static boolean invoke(Class<? extends EnabledWithCallback> callback, String[] value) {
+        try {
+            EnabledWithCallback instance = callback.getConstructor().newInstance();
+            return instance.eval(value);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
         }
-        return true;
     }
 
     private String[] getDependsOnTests(FrameworkMethod method) {

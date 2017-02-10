@@ -13,22 +13,13 @@
  */
 package net.aaf.junit;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
 /**
  * @author Amihai Fuks
- * @version Jan 26, 2017
+ * @version Feb 10, 2017
  * @since 1.0.0
  */
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
-public @interface EnabledWith {
+public interface EnabledWithCallback {
 
-    String[] value();
-
-    Class<? extends EnabledWithCallback> callback() default SystemPropertyEnabledWithCallback.class;
+    boolean eval(String[] params);
 
 }
