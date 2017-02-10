@@ -69,13 +69,13 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     }
 
     private static boolean runSerial() {
-        return sysPropEquals("dependson.runner.serial");
+        return sysPropsMatches("dependson.runner.serial");
     }
 
     private void verifyDependencyGraph() throws InitializationError {
         getChildren().stream().forEach(m -> graph.addDependecy(getName(m), getDependsOnTests(m)));
         graph.verify();
-        if (sysPropEquals("dependency.graph.print")) {
+        if (sysPropsMatches("dependency.graph.print")) {
             System.out.println(getTestClass().getName());
             System.out.println(graph.toString());
         }
@@ -121,19 +121,26 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
 
     private static boolean enabledWith(FrameworkMethod method) {
         EnabledWith enabledWith = method.getAnnotation(EnabledWith.class);
-        return enabledWith == null || sysPropEquals(enabledWith.value());
+        return enabledWith == null || sysPropsMatches(enabledWith.value());
     }
 
-    private static boolean sysPropEquals(String prop) {
-        int equalIdx = prop.indexOf('=');
-        if (equalIdx == -1 || equalIdx == prop.length() - 1) {
-            String key = prop.substring(0, equalIdx != -1 ? equalIdx : prop.length());
-            return System.getProperty(key) != null;
-        } else {
-            String key = prop.substring(0, equalIdx);
-            String value = prop.substring(equalIdx + 1);
-            return value.equalsIgnoreCase(System.getProperty(key));
+    private static boolean sysPropsMatches(String... props) {
+        for (String prop : props) {
+            int equalIdx = prop.indexOf('=');
+            if (equalIdx == -1 || equalIdx == prop.length() - 1) {
+                String key = prop.substring(0, equalIdx != -1 ? equalIdx : prop.length());
+                if (System.getProperty(key) == null) {
+                    return false;
+                }
+            } else {
+                String key = prop.substring(0, equalIdx);
+                String value = prop.substring(equalIdx + 1);
+                if (!value.equalsIgnoreCase(System.getProperty(key))) {
+                    return false;
+                }
+            }
         }
+        return true;
     }
 
     private String[] getDependsOnTests(FrameworkMethod method) {
