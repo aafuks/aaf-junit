@@ -92,7 +92,7 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     }
 
     private void verifyDependecyGraph() throws InitializationError {
-        getChildren().stream().forEach(r -> graph.addDependecy(getClassName(r), getDependsOnClasses(r)));
+        getChildren().stream().forEach(r -> graph.addDependecy(getClassName(r), getDependsOnClasses(r), getDependsOnClassesLast(r)));
         graph.verify();
         if (System.getProperties().keySet().contains("dependency.graph.print")) {
             System.out.println(getTestClass().getName());
@@ -178,12 +178,12 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         return Arrays.stream(dependsOn.value()).map(c -> c.getName()).collect(Collectors.toList()).toArray(new String[0]);
     }
 
-    private static int getDependsOnClassesOrder(Runner runner) {
+    private static boolean getDependsOnClassesLast(Runner runner) {
         if (!runner.getDescription().getTestClass().isAnnotationPresent(DependsOnClasses.class)) {
-            return 0;
+            return false;
         }
         DependsOnClasses dependsOn = runner.getDescription().getTestClass().getAnnotation(DependsOnClasses.class);
-        return dependsOn.order();
+        return dependsOn.last();
     }
 
     @Override
@@ -202,8 +202,8 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         for (String clazz : classes) {
             Runner r = nameToRunner.get(clazz);
             String[] dependsOn = getDependsOnClasses(r);
-            int order = getDependsOnClassesOrder(r);
-            graph.addDependecy(clazz, dependsOn, order);
+            boolean last = getDependsOnClassesLast(r);
+            graph.addDependecy(clazz, dependsOn, last);
             if (r.getDescription().getTestClass().isAnnotationPresent(SynchronizedOn.class)) {
                 graph.addSynchronized(getClassName(r), getSynchronizedOn(r));
             }

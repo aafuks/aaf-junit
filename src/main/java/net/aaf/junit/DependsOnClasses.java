@@ -31,6 +31,6 @@ public @interface DependsOnClasses {
 
     Class<?>[] value();
 
-    int order() default 0;
+    boolean last() default false;
 
 }

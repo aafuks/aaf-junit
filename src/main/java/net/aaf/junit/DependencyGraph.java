@@ -38,7 +38,7 @@ public class DependencyGraph {
     private final Map<String, Set<String>> onDepends;
     private final Map<String, Set<String>> dependsOn;
 
-    private final Map<String, Set<String>> orderDependsOn;
+    private final Map<String, Set<String>> lastDependsOn;
 
     private final Map<String, Set<String>> onSynchronized;
     private final Map<String, String> synchronizedOn;
@@ -48,7 +48,7 @@ public class DependencyGraph {
         onDepends = new HashMap<>();
         dependsOn = new HashMap<>();
 
-        orderDependsOn = new HashMap<>();
+        lastDependsOn = new HashMap<>();
 
         onSynchronized = new HashMap<>();
         synchronizedOn = new HashMap<>();
@@ -56,18 +56,18 @@ public class DependencyGraph {
     }
 
     public synchronized void addDependecy(String subject, String[] dependsOns) {
-        addDependecy(subject, dependsOns, 0);
+        addDependecy(subject, dependsOns, false);
     }
 
-    public synchronized void addDependecy(String subject, String[] dependsOns, int order) {
+    public synchronized void addDependecy(String subject, String[] dependsOns, boolean last) {
         onDepends.putIfAbsent(subject, new HashSet<>());
         dependsOn.put(subject, new HashSet<>(Arrays.asList(dependsOns)));
         for (String d : dependsOns) {
             onDepends.putIfAbsent(d, new HashSet<>());
             onDepends.get(d).add(subject);
         }
-        if (order != 0) {
-            orderDependsOn.put(subject, new HashSet<>());
+        if (last) {
+            lastDependsOn.put(subject, new HashSet<>());
         }
     }
 
@@ -78,8 +78,20 @@ public class DependencyGraph {
     }
 
     public synchronized void verify() throws InitializationError {
+        computeLastDependencies();
+        detectLastDependenciesLoops();
         detectMissingOnDepends();
         detectLoops();
+    }
+
+    private void detectLastDependenciesLoops() throws InitializationError {
+        for (Set<String> nodes : lastDependsOn.values()) {
+            for (String n : nodes) {
+                if (lastDependsOn.containsKey(n)) {
+                    throw new InitializationError("multi last dependecny detected ('" + n + "')");
+                }
+            }
+        }
     }
 
     private void detectLoops() throws InitializationError {
@@ -106,20 +118,20 @@ public class DependencyGraph {
     }
 
     public synchronized List<String> getRoots() {
-        computeOrderDependencies();
+        computeLastDependencies();
         return filterSychronizedOn(dependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).map(e -> e.getKey())
                 .collect(Collectors.toList()));
     }
 
-    private void computeOrderDependencies() {
-        orderDependsOn.keySet().stream().forEach(n -> getLeafs(n));
+    private void computeLastDependencies() {
+        lastDependsOn.keySet().stream().forEach(n -> getSubDependencyGraph(n));
     }
 
-    private void getLeafs(String subject) {
-        dependsOn.get(subject).forEach(n -> orderDependsOn.get(subject).addAll(getLeafs(subject, n)));
+    private void getSubDependencyGraph(String subject) {
+        dependsOn.get(subject).forEach(n -> lastDependsOn.get(subject).addAll(getSubDependencyGraph(subject, n)));
     }
 
-    private Set<String> getLeafs(String subject, String node) {
+    private Set<String> getSubDependencyGraph(String subject, String node) {
         Set<String> leafs = new HashSet<>();
         if (subject == node) {
             return leafs;
@@ -128,7 +140,8 @@ public class DependencyGraph {
             leafs.add(node);
             return leafs;
         }
-        onDepends.get(node).forEach(n -> leafs.addAll(getLeafs(subject, n)));
+        leafs.add(node);
+        onDepends.get(node).forEach(n -> leafs.addAll(getSubDependencyGraph(subject, n)));
         return leafs;
     }
 
@@ -149,15 +162,15 @@ public class DependencyGraph {
         }
         List<String> next = new ArrayList<>();
         addOnDepends(node, next);
-        addOrderDependsOn(node, next);
+        addLastDependsOn(node, next);
         addSynchronized(node, next);
         return filterSychronizedOn(next);
     }
 
-    private void addOrderDependsOn(String node, List<String> next) {
-        orderDependsOn.remove(node);
-        orderDependsOn.keySet().forEach(n -> orderDependsOn.get(n).remove(node));
-        orderDependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).forEach(e -> next.add(e.getKey()));
+    private void addLastDependsOn(String node, List<String> next) {
+        lastDependsOn.remove(node);
+        lastDependsOn.keySet().forEach(n -> lastDependsOn.get(n).remove(node));
+        lastDependsOn.entrySet().stream().filter(e -> e.getValue().isEmpty()).forEach(e -> next.add(e.getKey()));
     }
 
     private void addSynchronized(String node, List<String> next) {
@@ -173,7 +186,7 @@ public class DependencyGraph {
     private void addOnDepends(String node, List<String> next) {
         onDepends.get(node).forEach(d -> {
             dependsOn.get(d).remove(node);
-            if (dependsOn.get(d).isEmpty() && (!orderDependsOn.containsKey(d) || orderDependsOn.get(d).isEmpty())) {
+            if (dependsOn.get(d).isEmpty() && (!lastDependsOn.containsKey(d) || lastDependsOn.get(d).isEmpty())) {
                 next.add(d);
             }
         });
@@ -183,7 +196,7 @@ public class DependencyGraph {
         dependsOn.clear();
         onDepends.clear();
 
-        orderDependsOn.clear();
+        lastDependsOn.clear();
 
         onSynchronized.clear();
         synchronizedOn.clear();
