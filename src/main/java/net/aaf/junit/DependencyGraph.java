@@ -80,7 +80,7 @@ public class DependencyGraph {
     private void detectLoops(String root, Set<String> s) throws InitializationError {
         for (String d : dependsOn.get(root)) {
             if (!s.add(d)) {
-                throw new InitializationError("loop detected in dependency graph ('" + d + "')");
+                throw new InitializationError("loop/multi-path detected in dependency graph ('" + d + "')");
             }
             detectLoops(d, new HashSet<>(s));
         }

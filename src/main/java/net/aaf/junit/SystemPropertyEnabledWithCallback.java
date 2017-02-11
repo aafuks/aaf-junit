@@ -13,6 +13,8 @@
  */
 package net.aaf.junit;
 
+import java.util.Arrays;
+
 /**
  * @author Amihai Fuks
  * @version Feb 10, 2017
@@ -22,22 +24,23 @@ public class SystemPropertyEnabledWithCallback implements EnabledWithCallback {
 
     @Override
     public boolean eval(String[] params) {
-        for (String param : params) {
-            int equalIdx = param.indexOf('=');
-            if (equalIdx == -1 || equalIdx == param.length() - 1) {
-                String key = param.substring(0, equalIdx != -1 ? equalIdx : param.length());
-                if (System.getProperty(key) == null) {
-                    return false;
-                }
-            } else {
-                String key = param.substring(0, equalIdx);
-                String value = param.substring(equalIdx + 1);
-                if (!value.equalsIgnoreCase(System.getProperty(key))) {
-                    return false;
-                }
-            }
+        return Arrays.stream(params).allMatch(p -> eval(p));
+    }
+
+    private static boolean eval(String param) {
+        if (!param.contains("=")) {
+            return System.getProperty(param) != null;
+        } else if (param.charAt(param.length() - 1) == '=') {
+            String key = param.substring(0, param.length());
+            return System.getProperty(key) != null;
+        } else {
+            String[] split = param.split("=");
+            return equalsIgnoreCase(split[0], split[1]);
         }
-        return true;
+    }
+
+    private static boolean equalsIgnoreCase(String key, String value) {
+        return value.equalsIgnoreCase(System.getProperty(key));
     }
 
 }

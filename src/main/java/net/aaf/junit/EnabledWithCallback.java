@@ -18,6 +18,7 @@ package net.aaf.junit;
  * @version Feb 10, 2017
  * @since 1.0.0
  */
+@FunctionalInterface
 public interface EnabledWithCallback {
 
     boolean eval(String[] params);
