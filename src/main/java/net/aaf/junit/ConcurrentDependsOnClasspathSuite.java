@@ -178,6 +178,14 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
         return Arrays.stream(dependsOn.value()).map(c -> c.getName()).collect(Collectors.toList()).toArray(new String[0]);
     }
 
+    private static int getDependsOnClassesOrder(Runner runner) {
+        if (!runner.getDescription().getTestClass().isAnnotationPresent(DependsOnClasses.class)) {
+            return 0;
+        }
+        DependsOnClasses dependsOn = runner.getDescription().getTestClass().getAnnotation(DependsOnClasses.class);
+        return dependsOn.order();
+    }
+
     @Override
     public void run(@SuppressWarnings("hiding") RunNotifier notifier) {
         this.notifier = notifier;
@@ -187,24 +195,19 @@ public class ConcurrentDependsOnClasspathSuite extends ClasspathSuite {
     }
 
     private void reCreateDependencyGraph() {
-        Set<String> classes = new HashSet<>(shouldRun);
-        while (!classes.isEmpty()) {
-            classes = addDependencies(classes);
-        }
+        addDependencies(shouldRun);
     }
 
-    private Set<String> addDependencies(Set<String> classes) {
-        Set<String> ret = new HashSet<>();
+    private void addDependencies(Set<String> classes) {
         for (String clazz : classes) {
             Runner r = nameToRunner.get(clazz);
             String[] dependsOn = getDependsOnClasses(r);
-            ret.addAll(Arrays.asList(dependsOn));
-            graph.addDependecy(clazz, dependsOn);
+            int order = getDependsOnClassesOrder(r);
+            graph.addDependecy(clazz, dependsOn, order);
             if (r.getDescription().getTestClass().isAnnotationPresent(SynchronizedOn.class)) {
-                graph.addSynchronizedOn(getClassName(r), getSynchronizedOn(r));
+                graph.addSynchronized(getClassName(r), getSynchronizedOn(r));
             }
         }
-        return ret;
     }
 
     private class SuiteRunListener extends RunListener {
