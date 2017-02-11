@@ -120,22 +120,7 @@ public class ConcurrentDependsOnRunner extends BlockJUnit4ClassRunner {
     }
 
     private boolean shouldIgnore(FrameworkMethod method) {
-        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> failed.contains(m)) || !enabledWith(method);
-    }
-
-    private static boolean enabledWith(FrameworkMethod method) {
-        EnabledWith enabledWith = method.getAnnotation(EnabledWith.class);
-        return enabledWith == null || invoke(enabledWith.callback(), enabledWith.value());
-    }
-
-    private static boolean invoke(Class<? extends EnabledWithCallback> callback, String[] value) {
-        try {
-            EnabledWithCallback instance = callback.getConstructor().newInstance();
-            return instance.eval(value);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
+        return Arrays.stream(getDependsOnTests(method)).anyMatch(m -> failed.contains(m));
     }
 
     private String[] getDependsOnTests(FrameworkMethod method) {
