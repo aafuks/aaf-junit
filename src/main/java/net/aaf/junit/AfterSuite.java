@@ -14,23 +14,16 @@
 package net.aaf.junit;
 
 import java.lang.annotation.ElementType;
-import java.lang.annotation.Inherited;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
  * @author Amihai Fuks
- * @version Dec 17, 2016
+ * @version Feb 11, 2017
  * @since 1.0.0
  */
-@Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@Inherited
-public @interface DependsOnClasses {
-
-    Class<?>[] value();
-
-    int order() default 0;
-
+@Target(ElementType.TYPE)
+public @interface AfterSuite {
 }

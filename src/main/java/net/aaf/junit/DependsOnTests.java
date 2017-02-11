@@ -29,6 +29,6 @@ import java.lang.annotation.Target;
 @Inherited
 public @interface DependsOnTests {
 
-    String[] value() default {};
+    String[] value();
 
 }
