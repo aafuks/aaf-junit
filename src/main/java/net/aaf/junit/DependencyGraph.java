@@ -133,7 +133,7 @@ public class DependencyGraph {
 
     private Set<String> getSubDependencyGraph(String subject, String node) {
         Set<String> leafs = new HashSet<>();
-        if (subject == node) {
+        if (subject.equals(node)) {
             return leafs;
         }
         if (onDepends.get(node).isEmpty()) {
